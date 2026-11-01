@@ -142,7 +142,12 @@ impl Size {
                     scale.is_finite() && scale > 0.0,
                     "scale must be finite and positive"
                 );
-                (f64::from(width) * scale, f64::from(height) * scale)
+                // Small reductions still need at least one pixel on each axis,
+                // just like aspect-preserving Fit sizes.
+                (
+                    (f64::from(width) * scale).max(1.0),
+                    (f64::from(height) * scale).max(1.0),
+                )
             }
             Self::Fit {
                 width: w,

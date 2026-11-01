@@ -1,10 +1,17 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/branding/big-picture-logo-dark.svg">
+    <img src="docs/branding/big-picture-logo-light.svg" alt="Big Picture" width="600">
+  </picture>
+</p>
+
 # Big Picture
 
 An offline, open-source Rust image upscaler with a command-line interface and
 a native desktop application. Bring a small image; save a larger one. No
 account, uploads, API keys, AI weights, or runtime downloads.
 
-![Big Picture desktop comparison](docs/screenshots/desktop.png)
+![Big Picture desktop app with the Expand logo and before/after image comparison](docs/screenshots/desktop.png)
 
 Conventional upscaling is the scope of this first version. It interpolates
 existing pixels; it does not recover missing detail or perform AI restoration.
@@ -12,7 +19,7 @@ existing pixels; it does not recover missing detail or perform AI restoration.
 ## What it does
 
 - Single images, multiple files, quoted globs, and recursive folder batches.
-- 2× / 3× / 4× / 8× presets, fractional scales, width/height, aspect-preserving
+- 0.25× / 0.5× / 2× / 3× / 4× / 8× presets, fractional scales, width/height, aspect-preserving
   bounding boxes, and explicit exact-size stretching.
 - Nearest, bilinear, Catmull–Rom, Mitchell, and Lanczos 3 filters powered by
   `fast_image_resize`, with alpha-aware filtering, optional linear light and sharpening.
@@ -20,8 +27,9 @@ existing pixels; it does not recover missing detail or perform AI restoration.
 - Desktop queue, drag and drop, before/after wipe, preview zoom, per-file
   results, cancellation, native file dialogs, and saved preferences.
 - Simple desktop mode: choose an image and ratio, then export quality-100 JPEGs
-  with every algorithm. Defaults to 2× and your last export folder (or
-  `~/Pictures/big-picture`), with timestamped names and automatic queue cleanup.
+  with every algorithm. Defaults to 2× and your system Photos/Pictures folder
+  on each launch, with timestamped names, a retained queue, and an **Open folder**
+  button after export.
 - CLI dry runs, JSON, shell completions, meaningful exit codes, and Ctrl+C.
 - EXIF orientation, input/output limits, source protection, collision detection,
   and atomic output-file replacement.

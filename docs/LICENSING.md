@@ -30,6 +30,9 @@ not by themselves license somebody else's input image to you.
 | [walkdir / same-file](https://github.com/BurntSushi/walkdir) | Discovery and source protection | Unlicense OR MIT |
 | [glob](https://github.com/rust-lang/glob) | Input pattern expansion | MIT OR Apache-2.0 |
 | [ctrlc](https://github.com/Detegr/rust-ctrlc) | Cancellation | MIT OR Apache-2.0 |
+| [dirs-next](https://github.com/xdg-rs/dirs) | System Pictures folder | MIT OR Apache-2.0 |
+| [open](https://github.com/Byron/open-rs) | Open the export folder | MIT |
+| [winresource](https://github.com/BenjaminRi/winresource) | Build-time Windows icon and version resources | MIT |
 
 The exact transitive dependency set is pinned in Cargo.lock. The dependency
 graph also includes Boost-licensed Windows clipboard support (BSL-1.0), along

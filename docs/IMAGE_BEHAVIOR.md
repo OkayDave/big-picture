@@ -54,8 +54,10 @@ Converting inputs to a supported still-image format is a separate step.
 
 ## Large images and files
 
-The engine validates dimensions and overflow before output allocation. Defaults
-limit source/output to 100 million pixels and estimate 512 MiB of working memory.
+The engine validates dimensions and overflow before output allocation. CLI and
+Advanced defaults limit source/output to 100 million pixels and estimate 512 MiB
+of working memory. Simple does not apply these app-level pixel or memory caps;
+available machine memory and codec dimension limits still apply.
 The estimate includes decoded input, filter/alpha workspaces, encode buffers,
 and optional sharpening; codec internals, allocator overhead, the GUI and OS
 are outside this estimate. Decoder allocation limits are also set, but some

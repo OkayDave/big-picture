@@ -12,11 +12,14 @@ use std::{
     time::Duration,
 };
 
+mod branding;
+mod platform;
 mod simple;
 
 const ACCENT: Color32 = Color32::from_rgb(112, 224, 192);
 const MUTED: Color32 = Color32::from_rgb(156, 168, 181);
 const SETTINGS_KEY: &str = "big-picture.settings.v1";
+const SCALE_PRESETS: [f64; 6] = [0.25, 0.5, 2.0, 3.0, 4.0, 8.0];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -25,6 +28,9 @@ struct Preferences {
     simple_scale: f64,
     options: Options,
     format: OutputFormat,
+    // Always resolve the OS's current Pictures location on launch, including
+    // when loading preferences written by older versions.
+    #[serde(skip, default = "platform::default_output_dir")]
     output_dir: String,
     size_mode: usize,
     scale: f64,
@@ -40,7 +46,7 @@ impl Default for Preferences {
             simple_scale: 2.0,
             options: Options::default(),
             format: OutputFormat::Png,
-            output_dir: String::new(),
+            output_dir: platform::default_output_dir(),
             size_mode: 0,
             scale: 2.0,
             width: 3840,
@@ -52,20 +58,16 @@ impl Default for Preferences {
 }
 impl Preferences {
     fn export_folder(&self) -> anyhow::Result<PathBuf> {
-        if self.output_dir.trim().is_empty() && self.simple {
-            simple::default_folder()
+        if self.output_dir.trim().is_empty() {
+            Ok(platform::default_folder())
         } else {
-            anyhow::ensure!(
-                !self.output_dir.trim().is_empty(),
-                "Choose an output folder first."
-            );
             Ok(PathBuf::from(&self.output_dir))
         }
     }
 
     fn preview_options(&self) -> Options {
         if self.simple {
-            simple::options(self.simple_scale, Filter::Lanczos3, &self.options)
+            simple::options(self.simple_scale, Filter::Lanczos3)
         } else {
             self.effective_options()
         }
@@ -120,6 +122,7 @@ enum Event {
 }
 
 pub struct Desktop {
+    logo: egui::TextureHandle,
     prefs: Preferences,
     queue: Vec<QueueItem>,
     selected: usize,
@@ -138,6 +141,7 @@ pub struct Desktop {
     completed: usize,
     failed: usize,
     total_exports: usize,
+    last_export_folder: Option<PathBuf>,
     close_pending: bool,
     initial_inputs: Option<Vec<PathBuf>>,
 }
@@ -166,6 +170,7 @@ impl Desktop {
             .and_then(|s| eframe::get_value(s, SETTINGS_KEY))
             .unwrap_or_default();
         Self {
+            logo: branding::logo(&cc.egui_ctx),
             prefs,
             queue: vec![],
             selected: 0,
@@ -184,6 +189,7 @@ impl Desktop {
             completed: 0,
             failed: 0,
             total_exports: 0,
+            last_export_folder: None,
             close_pending: false,
             initial_inputs: Some(inputs),
         }
@@ -318,7 +324,7 @@ impl Desktop {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_nanos();
-                simple::plan(&paths, &folder, scale, timestamp, &options)
+                simple::plan(&paths, &folder, scale, timestamp)
             } else {
                 crate::plan(&paths, &plan_options).map(|jobs| {
                     jobs.into_iter()
@@ -460,9 +466,7 @@ impl Desktop {
                         } else {
                             format!("Saved · {} × {}", report.width, report.height)
                         };
-                        if let Ok(folder) = self.prefs.export_folder() {
-                            self.prefs.output_dir = folder.to_string_lossy().into_owned();
-                        }
+                        self.last_export_folder = report.output.parent().map(PathBuf::from);
                         self.queue[i].output = Some(report.output);
                         self.completed += 1;
                     }
@@ -488,7 +492,6 @@ impl Desktop {
                         }
                     }
                     if self.prefs.simple {
-                        self.queue.retain(|item| item.saved != Filter::ALL.len());
                         for item in &mut self.queue {
                             item.status = format!(
                                 "{} saved · {} failed{}",
@@ -500,8 +503,6 @@ impl Desktop {
                                 item.status.push_str(&format!(": {error}"));
                             }
                         }
-                        self.selected = self.selected.min(self.queue.len().saturating_sub(1));
-                        self.clear_preview();
                     }
                     self.message = format!(
                         "{} saved · {} failed{}",
@@ -553,9 +554,15 @@ impl Desktop {
                 }
             });
         if self.prefs.size_mode == 0 {
-            ui.horizontal(|ui| {
-                for scale in [2.0, 3.0, 4.0, 8.0] {
-                    ui.selectable_value(&mut self.prefs.scale, scale, format!("{scale}×"));
+            ui.horizontal_wrapped(|ui| {
+                for scale in SCALE_PRESETS {
+                    if ui
+                        .selectable_value(&mut self.prefs.scale, scale, format!("{scale}×"))
+                        .clicked()
+                        && scale < 1.0
+                    {
+                        self.prefs.options.allow_downscale = true;
+                    }
                 }
             });
             ui.horizontal(|ui| {
@@ -699,11 +706,11 @@ impl Desktop {
     }
 
     fn simple_settings(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Choose. Upscale. Export.");
-        ui.label("Upscale ratio");
+        ui.heading("Choose. Resize. Export.");
+        ui.label("Scale ratio");
         let old = self.prefs.simple_scale;
-        ui.horizontal(|ui| {
-            for scale in [2.0, 3.0, 4.0, 8.0] {
+        ui.horizontal_wrapped(|ui| {
+            for scale in SCALE_PRESETS {
                 ui.selectable_value(&mut self.prefs.simple_scale, scale, format!("{scale}×"));
             }
         });
@@ -711,7 +718,7 @@ impl Desktop {
             ui.label("Custom ratio");
             ui.add(
                 egui::DragValue::new(&mut self.prefs.simple_scale)
-                    .range(1.0..=64.0)
+                    .range(0.25..=64.0)
                     .speed(0.05)
                     .suffix("×"),
             );
@@ -728,9 +735,7 @@ impl Desktop {
         }
         ui.separator();
         ui.label("Destination folder (optional)");
-        let default = simple::default_folder()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| "Choose a folder…".into());
+        let default = platform::default_folder().display().to_string();
         ui.add(
             egui::TextEdit::singleline(&mut self.prefs.output_dir)
                 .desired_width(f32::INFINITY)
@@ -742,11 +747,9 @@ impl Desktop {
             self.prefs.output_dir = path.to_string_lossy().into_owned();
         }
         ui.label(
-            RichText::new(
-                "Uses your last export folder, or Pictures/big-picture in your home folder.",
-            )
-            .small()
-            .color(MUTED),
+            RichText::new("Starts in your Photos/Pictures folder each time you open the app.")
+                .small()
+                .color(MUTED),
         );
         ui.separator();
         ui.label(format!(
@@ -759,7 +762,7 @@ impl Desktop {
                 .color(MUTED),
         );
         ui.label(RichText::new("Linear-light filtering and gentle sharpening for smooth filters. Transparent areas become white.").small().color(MUTED));
-        ui.label(RichText::new("Images leave the queue when all algorithms are saved. Failed or cancelled images stay for retry.").small().color(MUTED));
+        ui.label(RichText::new("Images stay in the queue after export. Remove them or clear the queue when you're finished.").small().color(MUTED));
     }
 
     fn preview_ui(&mut self, ui: &mut egui::Ui) {
@@ -918,8 +921,7 @@ impl eframe::App for Desktop {
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("big").size(30.0).strong().color(ACCENT));
-                ui.label(RichText::new("picture").size(30.0).strong());
+                branding::show_logo(ui, &self.logo, 64.0);
                 ui.label(RichText::new("  /  IMAGE UPSCALER").small().color(MUTED));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("About & licenses").clicked() {
@@ -944,6 +946,16 @@ impl eframe::App for Desktop {
                     ui.spinner();
                 }
                 ui.label(&self.message);
+                if !self.exporting
+                    && let Some(folder) = &self.last_export_folder
+                    && ui
+                        .button("Open folder")
+                        .on_hover_text(folder.display().to_string())
+                        .clicked()
+                    && let Err(error) = open::that_detached(folder)
+                {
+                    self.error = Some(format!("Could not open export folder: {error}"));
+                }
                 if self.busy() && ui.button("Cancel").clicked() {
                     self.cancel.store(true, Ordering::Relaxed);
                     self.message = "Cancelling after the current processing stage…".into();
@@ -1114,7 +1126,8 @@ impl eframe::App for Desktop {
                 .open(&mut self.show_about)
                 .default_width(620.0)
                 .show(ctx, |ui| {
-                    ui.heading("Big Picture 0.1.0");
+                    branding::show_logo(ui, &self.logo, 96.0);
+                    ui.label(concat!("Version ", env!("CARGO_PKG_VERSION")));
                     ui.label("Conventional upscaling. More pixels, without invented detail.");
                     ui.separator();
                     ui.label("MIT licensed. The app adds no royalties, attribution requirement, or commercial-use restriction to processed images. Your rights to the input still apply.");
@@ -1170,6 +1183,7 @@ pub fn launch(inputs: Vec<PathBuf>) -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1280.0, 820.0])
             .with_min_inner_size([980.0, 660.0])
+            .with_icon(branding::icon())
             .with_drag_and_drop(true),
         ..Default::default()
     };
@@ -1346,40 +1360,50 @@ mod tests {
     }
 
     #[test]
-    fn simple_defaults_and_old_preferences_use_last_folder() {
+    fn export_folder_resets_on_load_while_other_preferences_survive() {
         let prefs = Preferences::default();
         assert!(prefs.simple);
         assert_eq!(prefs.simple_scale, 2.0);
-        assert_eq!(
-            prefs.export_folder().unwrap(),
-            std::env::home_dir().unwrap().join("Pictures/big-picture")
-        );
+        assert_eq!(prefs.export_folder().unwrap(), platform::default_folder());
         let old: Preferences =
             serde_json::from_str(r#"{"output_dir":"previous-export","scale":8.0,"format":"Png"}"#)
                 .unwrap();
         assert!(old.simple);
         assert_eq!(old.simple_scale, 2.0);
-        assert_eq!(
-            old.export_folder().unwrap(),
-            PathBuf::from("previous-export")
-        );
+        assert_eq!(old.export_folder().unwrap(), platform::default_folder());
         let stored = Preferences {
             simple: false,
             simple_scale: 3.5,
+            output_dir: "custom destination".into(),
             ..old
         };
-        let restored: Preferences =
-            serde_json::from_str(&serde_json::to_string(&stored).unwrap()).unwrap();
+        assert_eq!(
+            stored.export_folder().unwrap(),
+            PathBuf::from("custom destination")
+        );
+        let json = serde_json::to_string(&stored).unwrap();
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&json)
+                .unwrap()
+                .get("output_dir")
+                .is_none()
+        );
+        let restored: Preferences = serde_json::from_str(&json).unwrap();
         assert!(!restored.simple);
         assert_eq!(restored.simple_scale, 3.5);
         assert_eq!(
             restored.export_folder().unwrap(),
-            stored.export_folder().unwrap()
+            platform::default_folder()
         );
+        let blank = Preferences {
+            output_dir: " ".into(),
+            ..stored
+        };
+        assert_eq!(blank.export_folder().unwrap(), platform::default_folder());
     }
 
     #[test]
-    fn simple_export_writes_every_algorithm_at_quality_100_and_clears_queue() {
+    fn simple_export_writes_every_algorithm_at_quality_100_and_keeps_queue_and_preview() {
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("my image.png");
         image::RgbaImage::from_fn(8, 6, |x, y| {
@@ -1401,9 +1425,15 @@ mod tests {
         app.export(&ctx);
         settle(&mut app, &ctx);
         assert_eq!((app.completed, app.failed, app.total_exports), (5, 0, 5));
-        assert!(app.queue.is_empty());
+        assert_eq!(app.queue.len(), 1);
+        assert_eq!(app.queue[0].path, input.canonicalize().unwrap());
+        assert_eq!(app.queue[0].saved, 5);
         assert_eq!(app.selected, 0);
-        assert!(app.before.is_none());
+        assert!(app.before.is_some());
+        assert_eq!(
+            app.last_export_folder.as_ref().unwrap(),
+            &app.queue[0].output.as_ref().unwrap().parent().unwrap()
+        );
         let outputs = std::fs::read_dir(app.prefs.export_folder().unwrap())
             .unwrap()
             .map(|e| e.unwrap().path())
@@ -1437,12 +1467,16 @@ mod tests {
             }
         }
         assert_eq!(std::fs::read(input).unwrap(), original);
-        // The successful destination survives a preferences save/load.
+        // Editing the destination after export must not redirect Open folder.
+        let exported_folder = app.last_export_folder.clone();
+        app.prefs.output_dir = dir.path().join("next batch").to_string_lossy().into_owned();
+        assert_eq!(app.last_export_folder, exported_folder);
+        // Restarting resets the destination even after a successful export.
         let restored: Preferences =
             serde_json::from_str(&serde_json::to_string(&app.prefs).unwrap()).unwrap();
         assert_eq!(
             restored.export_folder().unwrap(),
-            app.prefs.export_folder().unwrap()
+            platform::default_folder()
         );
     }
 
@@ -1470,19 +1504,25 @@ mod tests {
         app.export(&ctx);
         settle(&mut app, &ctx);
         assert_eq!((app.completed, app.failed), (5, 5));
-        assert_eq!(app.queue.len(), 1);
+        assert_eq!(app.queue.len(), 2);
         assert_eq!(app.queue[0].path, bad);
         assert!(app.queue[0].status.starts_with("0 saved · 5 failed:"));
-        assert_eq!(app.selected, 0);
+        assert_eq!(app.queue[1].saved, 5);
+        assert_eq!(app.selected, 1);
         image::RgbaImage::new(8, 6).save(&bad).unwrap();
         app.export(&ctx);
         settle(&mut app, &ctx);
-        assert_eq!((app.completed, app.failed), (5, 0));
-        assert!(app.queue.is_empty());
+        assert_eq!((app.completed, app.failed), (10, 0));
+        assert_eq!(app.queue.len(), 2);
+        assert!(
+            app.queue
+                .iter()
+                .all(|item| item.saved == 5 && item.failures.is_empty())
+        );
     }
 
     #[test]
-    fn simple_cancel_keeps_partial_images_and_removes_fully_saved_images() {
+    fn simple_cancel_keeps_partial_and_fully_saved_images() {
         let (mut app, ctx) = app();
         app.prefs.simple = true;
         app.queue = vec![
@@ -1504,9 +1544,51 @@ mod tests {
         app.poll(&ctx);
         assert!(!app.busy());
         assert!(!app.exporting);
-        assert_eq!(app.queue.len(), 1);
-        assert_eq!(app.queue[0].saved, 2);
-        assert!(app.queue[0].status.ends_with("cancelled"));
-        assert_eq!(app.selected, 0);
+        assert_eq!(app.queue.len(), 2);
+        assert_eq!(app.queue[0].saved, 5);
+        assert_eq!(app.queue[1].saved, 2);
+        assert!(app.queue[1].status.ends_with("cancelled"));
+        assert_eq!(app.selected, 1);
+    }
+
+    #[test]
+    fn simple_fractional_presets_export_smaller_images_with_every_filter() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("source.png");
+        image::RgbaImage::new(16, 8).save(&input).unwrap();
+        let (mut app, ctx) = app();
+        app.prefs.simple = true;
+        // Even extremely restrictive Advanced settings must not affect Simple
+        // source loading, preview or exports.
+        app.prefs.options.max_pixels = 1;
+        app.prefs.options.memory_mib = 1;
+        app.prefs.output_dir = dir.path().join("exports").to_string_lossy().into_owned();
+        app.add(vec![input], &ctx);
+        settle(&mut app, &ctx);
+        assert!(app.before.is_some(), "{}", app.message);
+        assert!(app.last_export_folder.is_none());
+        for (scale, expected) in [(0.25, (4, 2)), (0.5, (8, 4))] {
+            app.prefs.simple_scale = scale;
+            app.export(&ctx);
+            settle(&mut app, &ctx);
+            assert_eq!((app.completed, app.failed), (5, 0), "{}", app.message);
+            assert_eq!(app.queue.len(), 1);
+            let folder = app.last_export_folder.as_ref().unwrap();
+            let suffix = format!("-{scale}x.jpeg");
+            let outputs: Vec<_> = std::fs::read_dir(folder)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .filter(|path| {
+                    path.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .ends_with(&suffix)
+                })
+                .collect();
+            assert_eq!(outputs.len(), Filter::ALL.len());
+            for output in outputs {
+                assert_eq!(image::image_dimensions(output).unwrap(), expected);
+            }
+        }
     }
 }

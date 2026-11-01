@@ -27,6 +27,8 @@ fn opts(size: Size) -> Options {
 fn target_scale_and_fractional_scale() {
     assert_eq!(Size::Scale(2.0).dimensions(13, 7).unwrap(), (26, 14));
     assert_eq!(Size::Scale(2.5).dimensions(13, 7).unwrap(), (33, 18));
+    assert_eq!(Size::Scale(0.25).dimensions(1, 7).unwrap(), (1, 2));
+    assert_eq!(Size::Scale(0.5).dimensions(3, 1).unwrap(), (2, 1));
 }
 #[test]
 fn fit_preserves_aspect_and_does_not_crop() {

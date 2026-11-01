@@ -9,17 +9,19 @@ default-run = "big-picture"
 
 [features]
 default = ["gui"]
-gui = ["dep:eframe", "dep:rfd"]
+gui = ["dep:dirs-next", "dep:eframe", "dep:open", "dep:rfd", "dep:winresource"]
 
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.6", features = ["derive", "wrap_help"] }
 clap_complete = "4.6"
 ctrlc = "3.5"
+dirs-next = { version = "2", optional = true }
 eframe = { version = "0.33.3", optional = true, default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11", "persistence"] }
 fast_image_resize = { version = "6.1", features = ["image"] }
 glob = "0.3"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "tiff", "bmp"] }
+open = { version = "5.4.5", optional = true }
 rfd = { version = "0.17", optional = true }
 same-file = "1.0"
 serde = { version = "1.0", features = ["derive"] }
@@ -41,3 +43,6 @@ unsafe_code = "forbid"
 
 [lints.clippy]
 all = "warn"
+
+[build-dependencies]
+winresource = { version = "0.1.34", optional = true }

@@ -1,0 +1,33 @@
+Big Picture / Expand
+
+The small image and expanding frame share one baseline. The outer mint corner
+suggests a larger canvas. Keep the two shapes together and preserve their proportions.
+
+Colours
+Mint: #70E0C0 (matches the desktop application accent)
+Ink: #111A22
+Ivory: #F4F3ED
+
+Files
+big-picture-logo-light.svg / .png: transparent horizontal logo for light backgrounds.
+big-picture-logo-dark.svg / .png: transparent horizontal logo for dark backgrounds.
+The SVG wordmarks use outlined Inter SemiBold lettering and need no installed font.
+big-picture-mark-colour.svg: standalone mint and ink symbol.
+big-picture-mark-reversed.svg: standalone mint and ivory symbol.
+big-picture-mark-mono-dark.svg / mono-light.svg: one-colour versions.
+big-picture-app-icon.svg: rounded dark tile with ivory and mint symbol.
+big-picture-app-icon-{32,256,512,1024}.png: transparent PNG app icons.
+big-picture-app-icon.ico: Windows icon with 16, 24, 32, 48, 64, 128, and 256px images.
+big-picture-logo-preview.png / icon-preview.png: presentation and small-size review.
+
+Allow clear space around the standalone mark of at least one frame-stroke width.
+Use the monochrome mark where colour reproduction is unavailable.
+
+The concept sheet was generated with the built-in image generation tool. The
+selected Expand concept was rebuilt as geometric SVG artwork for consistent,
+scalable assets. generate-branding.cjs creates all production exports.
+The desktop header and About window embed the dark-background PNG logo. The
+native window uses the 256px PNG icon. Windows GUI-enabled builds also embed
+the ICO resource in the executables. The README selects the appropriate SVG
+logo for the reader's colour scheme. Portable packages include these files
+through the existing recursive docs copy.

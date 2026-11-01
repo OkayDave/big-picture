@@ -3,17 +3,25 @@
 Start `big-picture-gui` or `big-picture gui`. Both accept image paths. On Windows,
 the GUI executable runs without a console window.
 
+The Expand logo appears in the header and About window. The native window uses
+the matching app icon; Windows GUI-enabled builds also embed the icon and version
+information in both executable files. All artwork is bundled for offline use.
+
 ## Simple mode
 
 The app opens in **Simple** mode by default. Use **Choose image…** (or drop an
-image onto the window), choose an upscale ratio, optionally choose a destination,
+image onto the window), choose a scale ratio, optionally choose a destination,
 then click **Export 5 JPEGs**. Multiple selected images are also supported; the
 button shows the total number of exports.
 
-- The initial ratio is **2×**. Presets and custom ratios from 1× to 64× are available.
-- The destination uses the saved export folder, or `~/Pictures/big-picture` if
-  none has been chosen. Missing folders are created when exporting. Leaving the
-  destination field empty restores the home-folder default.
+- The initial ratio is **2×**. Presets are **0.25×, 0.5×, 2×, 3×, 4×, and 8×**;
+  custom ratios from 0.25× to 64× are available. Ratios below 1× make smaller images.
+- On every launch, the destination resets to your system **Photos/Pictures**
+  folder, honoring Windows known-folder redirection and Linux XDG user-directory
+  settings. If it cannot be found, the app falls back to `Pictures` in your home
+  folder, then the current folder, then `big-picture` in the system temporary folder.
+  Missing folders are created when exporting. You can change the destination for
+  the current session; leaving the field empty restores the system default.
 - Every image is exported once with each available algorithm: Nearest,
   Bilinear, Catmull–Rom, Mitchell, and Lanczos 3.
 - All outputs are **JPEG at quality 100**, with transparency composited on white.
@@ -23,17 +31,21 @@ button shows the total number of exports.
   `1793491200000000000-holiday-lanczos3-2x.jpeg`. The timestamp is UTC Unix
   nanoseconds shared across the batch, the original name excludes its extension,
   and ratios include `x` (including fractional values such as `2.5x`).
-- Images leave the queue once **all five exports succeed**. Failed or cancelled
-  images remain with their saved/failed counts and an error where applicable.
-  Retrying exports all five algorithms again with a new timestamp.
+- Images and the selected preview **stay in the queue after export**, with
+  saved/failed counts and an error where applicable. Use **Remove selected** or
+  **Clear queue** when finished. Exporting again processes all queued images with
+  all five algorithms and a new timestamp.
+- After an export saves any files, **Open folder** in the status bar opens their
+  folder in your default file manager. It remembers the actual export location
+  even if you change the destination field afterward.
 - Output collisions are rejected before writing. Simple never replaces existing
   outputs, even if replacement was enabled in Advanced.
 
 The selected image is shown as a source thumbnail; Simple does not run a full
-upscale before Export. Processing runs one output at a time. Simple allows an
-estimated working-memory budget of at least 8192 MiB for full-resolution,
-linear-light processing; it uses the pixel limit from Advanced and honors a
-higher Advanced memory budget. Resource checks still reject oversized images.
+upscale before Export. Processing runs one output at a time. Simple does not
+apply the app's pixel or memory caps and does not inherit Advanced resource
+settings. Image dimensions must still fit the output format and the machine
+must have enough available memory for full-resolution processing.
 
 ## Advanced mode
 
@@ -46,6 +58,7 @@ from Simple's recipes; the destination folder is shared between modes.
 2. Choose a queued image. An initial preview is generated on a worker thread.
 3. Choose a scale preset or width/height sizing mode, filter, optional linear
    light, and sharpening. Changing processing settings invalidates the old result.
+   Selecting **0.25×** or **0.5×** also enables **Allow smaller outputs**.
 4. Use **Build preview**. Drag the mint divider to compare the source on the
    left with the upscaled result on the right. Turn off **Comparison wipe** to
    show the result alone. Zoom and scroll to inspect the preview.
@@ -53,6 +66,7 @@ from Simple's recipes; the destination folder is shared between modes.
    choose the transparency background. Output folder text can also be typed.
 6. Use **Export N images**. Every queued image uses the current settings.
    The queue shows each saved path or error, and the status bar reports totals.
+   Use **Open folder** to open the exported files' folder in your file manager.
 
 Queue operations, settings and previews are disabled while a worker is active.
 The window keeps repainting and its Cancel button remains usable. Cancellation
@@ -66,7 +80,7 @@ source images are always protected, even when enabled.
 
 Settings, selected mode and each mode's scale are saved through eframe in the OS
 application-data directory. The image queue and image pixels are not persisted.
-Output-folder preferences persist, along with processing and resource settings.
+Processing and resource settings persist; the output folder resets on launch.
 
 ## Preview limits
 

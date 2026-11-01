@@ -53,7 +53,8 @@ just extensions, determine decoding. Supported filename extensions are `.png`,
 | `--memory-mib <MiB>` | Estimated working-memory limit, default 512 MiB. |
 | `--json` | Machine-readable stdout; usable before or after subcommands. |
 
-Fractional scale dimensions round to nearest integer. Bounding-box dimensions
+Fractional scale dimensions round to nearest integer, with a minimum of one
+pixel per axis. Bounding-box dimensions
 round down, with a minimum of one pixel. A scale of 1 is allowed. It is possible
 to normalize a codec or remove metadata without changing dimensions.
 
