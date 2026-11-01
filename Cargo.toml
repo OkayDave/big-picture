@@ -1,0 +1,43 @@
+[package]
+name = "big-picture"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Offline image upscaling with a shared Rust engine, CLI, and desktop GUI"
+license = "MIT"
+default-run = "big-picture"
+
+[features]
+default = ["gui"]
+gui = ["dep:eframe", "dep:rfd"]
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.6", features = ["derive", "wrap_help"] }
+clap_complete = "4.6"
+ctrlc = "3.5"
+eframe = { version = "0.33.3", optional = true, default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11", "persistence"] }
+fast_image_resize = { version = "6.1", features = ["image"] }
+glob = "0.3"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "tiff", "bmp"] }
+rfd = { version = "0.17", optional = true }
+same-file = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3.27"
+walkdir = "2.5"
+
+[[bin]]
+name = "big-picture-gui"
+path = "src/bin/gui.rs"
+required-features = ["gui"]
+
+[profile.release]
+lto = "thin"
+strip = "debuginfo"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

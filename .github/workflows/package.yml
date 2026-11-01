@@ -1,0 +1,53 @@
+name: Portable packages
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxcursor-dev libxi-dev libxrandr-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev libegl1-mesa-dev
+      - run: cargo test --all-targets --all-features --locked
+      - run: cargo build --release --locked --bins
+      - run: cargo install cargo-about --version 0.9.3 --locked
+      - run: cargo about generate --all-features --locked docs/licenses.hbs -o THIRD_PARTY_NOTICES.html
+      - name: Stage package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist/package -Force | Out-Null
+          $extension = if ($IsWindows) { '.exe' } else { '' }
+          Copy-Item "target/release/big-picture$extension" dist/package/
+          Copy-Item "target/release/big-picture-gui$extension" dist/package/
+          Copy-Item LICENSE,README.md,THIRD_PARTY_NOTICES.html dist/package/
+          Copy-Item docs dist/package/ -Recurse
+          Copy-Item CONTRIBUTING.md,CHANGELOG.md dist/package/
+          Copy-Item docs/font-licenses dist/package/ -Recurse
+          $name = 'big-picture-${{ runner.os }}-${{ runner.arch }}'
+          if ($IsWindows) {
+            $archive = "dist/$name.zip"
+            Compress-Archive -Path dist/package/* -DestinationPath $archive
+          } else {
+            $archive = "dist/$name.tar.gz"
+            tar -czf $archive -C dist/package .
+            if ($LASTEXITCODE -ne 0) { throw 'Archive failed' }
+          }
+          $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path -Leaf $archive)" | Set-Content "$archive.sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: big-picture-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256

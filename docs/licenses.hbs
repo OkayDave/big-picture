@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Big Picture — Third-party notices</title>
+<style>body{font:16px system-ui,sans-serif;max-width:980px;margin:48px auto;padding:0 24px;color:#202830}pre{white-space:pre-wrap;font:13px/1.6 monospace;background:#f0f3f5;padding:24px}a{color:#146852}h2{margin-top:48px}</style></head>
+<body><h1>Big Picture — Third-party notices</h1>
+<p>Generated from the pinned Rust dependency graph. These software and font notices accompany the application. Input-image rights remain with their respective owners.</p>
+<p>Additional verbatim font notices accompany this file in font-licenses/.</p>
+{{#each licenses}}
+<section><h2>{{name}}</h2><p>Used by:</p><ul>{{#each used_by}}<li>{{crate.name}} {{crate.version}}{{#if crate.repository}} — <a href="{{crate.repository}}">upstream</a>{{/if}}</li>{{/each}}</ul><pre>{{text}}</pre></section>
+{{/each}}
+</body></html>
