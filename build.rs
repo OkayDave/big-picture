@@ -5,7 +5,10 @@ fn main() {
         winresource::WindowsResource::new()
             .set_icon("docs/branding/big-picture-app-icon.ico")
             .set("ProductName", "Big Picture")
-            .set("FileDescription", "Big Picture — offline image upscaler")
+            .set(
+                "FileDescription",
+                "Big Picture — image upscaler and AI enhancement",
+            )
             .compile()
             .expect("compile the bundled Big Picture Windows icon and version information");
     }

@@ -3,16 +3,17 @@ name = "big-picture"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
-description = "Offline image upscaling with a shared Rust engine, CLI, and desktop GUI"
+description = "Local image upscaling with a shared Rust engine, CLI, and optional desktop AI enhancement"
 license = "MIT"
 default-run = "big-picture"
 
 [features]
 default = ["gui"]
-gui = ["dep:dirs-next", "dep:eframe", "dep:open", "dep:rfd", "dep:winresource"]
+gui = ["dep:dirs-next", "dep:eframe", "dep:open", "dep:rfd", "dep:winresource", "dep:reqwest", "dep:base64", "dep:zeroize", "dep:keyring"]
 
 [dependencies]
 anyhow = "1.0"
+base64 = { version = "0.22", optional = true }
 clap = { version = "4.6", features = ["derive", "wrap_help"] }
 clap_complete = "4.6"
 ctrlc = "3.5"
@@ -23,11 +24,22 @@ glob = "0.3"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "tiff", "bmp"] }
 open = { version = "5.4.5", optional = true }
 rfd = { version = "0.17", optional = true }
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "multipart", "rustls-tls-native-roots"] }
+zeroize = { version = "1.8", optional = true }
 same-file = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3.27"
 walkdir = "2.5"
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3.6.3", optional = true, default-features = false, features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6.3", optional = true, default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6.3", optional = true, default-features = false, features = ["sync-secret-service", "crypto-rust"] }
 
 [[bin]]
 name = "big-picture-gui"

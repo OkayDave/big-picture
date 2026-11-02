@@ -184,7 +184,7 @@ pub fn process(
 ) -> Result<ProcessReport> {
     let start = Instant::now();
     check_cancel(cancel)?;
-    let format = OutputFormat::from_path(output)?;
+    OutputFormat::from_path(output)?;
     validate_destination(input, output, overwrite)?;
     let info = inspect(input, options)?;
     options.target(info.width, info.height)?;
@@ -193,6 +193,33 @@ pub fn process(
     let result = resize(&source, options)?;
     drop(source);
     check_cancel(cancel)?;
+    let bytes = save_pixels(input, output, &result, options, overwrite, cancel)?;
+    Ok(ProcessReport {
+        input: input.into(),
+        output: output.into(),
+        input_width: info.width,
+        input_height: info.height,
+        width: result.width(),
+        height: result.height(),
+        bytes,
+        elapsed_ms: start.elapsed().as_millis(),
+    })
+}
+
+/// Save already-processed pixels without decoding, resizing, or contacting a service.
+/// Uses the same source protection and atomic commit as conventional processing.
+pub fn save_pixels(
+    input: &Path,
+    output: &Path,
+    result: &RgbaImage,
+    options: &Options,
+    overwrite: bool,
+    cancel: &AtomicBool,
+) -> Result<u64> {
+    options.validate()?;
+    check_cancel(cancel)?;
+    let format = OutputFormat::from_path(output)?;
+    validate_destination(input, output, overwrite)?;
     let parent = output
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -232,16 +259,7 @@ pub fn process(
     } else {
         temp.persist_noclobber(output).map_err(|e| e.error)?;
     }
-    Ok(ProcessReport {
-        input: input.into(),
-        output: output.into(),
-        input_width: info.width,
-        input_height: info.height,
-        width: result.width(),
-        height: result.height(),
-        bytes,
-        elapsed_ms: start.elapsed().as_millis(),
-    })
+    Ok(bytes)
 }
 
 pub fn validate_destination(input: &Path, output: &Path, overwrite: bool) -> Result<()> {

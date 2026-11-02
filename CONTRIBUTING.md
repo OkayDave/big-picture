@@ -2,7 +2,9 @@
 
 Big Picture is Rust 2024, minimum Rust 1.88. The committed Cargo.lock is the
 application dependency baseline. Prefer small, permissively licensed libraries;
-avoid network services and telemetry in the image-processing path.
+keep the conventional engine and CLI offline and free of telemetry. The optional
+desktop AI path calls OpenAI directly only after an explicit Generate action.
+Never log credentials, prompts, provider response bodies or image payloads.
 
 ## Build prerequisites
 
@@ -10,8 +12,10 @@ avoid network services and telemetry in the image-processing path.
 - macOS: Rust and Xcode command-line tools.
 - Linux: a C compiler, pkg-config, OpenGL/EGL and X11/Wayland development libraries.
   On Ubuntu, CI installs `libx11-dev libxcursor-dev libxi-dev libxrandr-dev
-  libxkbcommon-dev libwayland-dev libgl1-mesa-dev libegl1-mesa-dev`. Native file
+  libxkbcommon-dev libwayland-dev libgl1-mesa-dev libegl1-mesa-dev libdbus-1-dev`. Native file
   dialogs use an XDG desktop portal at runtime; a portal backend must be available.
+  Optional saved AI keys use an unlocked Secret Service provider (such as GNOME
+  Keyring) over the session D-Bus. No daemon or real key is needed for ordinary tests.
 
 ```sh
 cargo build --locked --bins

@@ -7,14 +7,16 @@
 
 # Big Picture
 
-An offline, open-source Rust image upscaler with a command-line interface and
-a native desktop application. Bring a small image; save a larger one. No
-account, uploads, API keys, AI weights, or runtime downloads.
+An open-source Rust image upscaler with a command-line interface and a native
+desktop application. Simple and Advanced modes work offline. Optional desktop
+**AI Enhancement** edits a single selected image through OpenAI using your own
+API key, with cloud uploads and API charges. No AI weights are downloaded.
 
 ![Big Picture desktop app with the Expand logo and before/after image comparison](docs/screenshots/desktop.png)
 
-Conventional upscaling is the scope of this first version. It interpolates
-existing pixels; it does not recover missing detail or perform AI restoration.
+Local upscaling interpolates existing pixels. AI Enhancement can clean up noise,
+clarify details, enhance colours and exposure, and follow additional instructions.
+AI can alter or invent details; review the comparison before saving.
 
 ## What it does
 
@@ -31,6 +33,12 @@ existing pixels; it does not recover missing detail or perform AI restoration.
   on each launch, with timestamped names, a retained queue, and an **Open folder**
   button after export.
 - CLI dry runs, JSON, shell completions, meaningful exit codes, and Ctrl+C.
+- Single-image AI Enhancement with scale including 1×, cleanup/detail/colour/
+  exposure controls, Subtle/Balanced/Creative enhancement, optional prompt and
+  Standard/High quality. Generate makes one paid request; Save reuses the full
+  result locally. API keys stay outside preferences; optionally remember a key
+  in the OS credential store. Prompts remain session-only. Choose lossless PNG/
+  WebP or quality-100 JPEG; the filename extension follows the selected format.
 - EXIF orientation, input/output limits, source protection, collision detection,
   and atomic output-file replacement.
 
@@ -67,10 +75,17 @@ for a CLI-only installation with no GUI dependency.
 Large CLI outputs may need `--memory-mib 1024` or more. The default 512 MiB is a
 conservative working-memory estimate, not an operating-system quota.
 
+The bundled sample is [Merlin](docs/samples/merlin.jpg), supplied by Dave. The
+1200×900 copy preserves the full composition and has source metadata removed;
+it is small enough for a practical 2× enhancement. Open it with **Choose image**
+or **Add images**. `cargo run --example generate_sample -- target/sample.png`
+exports the same sample as PNG. Portable packages include it under `docs/samples`.
+
 ## Image rights
 
 Big Picture is MIT licensed and adds no royalties or restrictions to its output
-images. Commercial and non-commercial output use is permitted to the extent
+images. AI Enhancement also involves OpenAI's applicable terms and policies.
+Commercial and non-commercial output use is permitted to the extent
 you have the necessary rights to the input. Upscaling does not clear rights in
 someone else's artwork, photos, logos, or depicted content. The chosen software
 libraries use permissive licenses; font notices also accompany binary distribution.

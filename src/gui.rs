@@ -12,7 +12,9 @@ use std::{
     time::Duration,
 };
 
+mod ai_panel;
 mod branding;
+mod credentials;
 mod platform;
 mod simple;
 
@@ -25,6 +27,10 @@ const SCALE_PRESETS: [f64; 6] = [0.25, 0.5, 2.0, 3.0, 4.0, 8.0];
 #[serde(default)]
 struct Preferences {
     simple: bool,
+    ai_mode: bool,
+    ai: crate::ai::Settings,
+    remember_ai_key: bool,
+    ai_format: OutputFormat,
     simple_scale: f64,
     options: Options,
     format: OutputFormat,
@@ -43,6 +49,10 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             simple: true,
+            ai_mode: false,
+            ai: crate::ai::Settings::default(),
+            remember_ai_key: false,
+            ai_format: OutputFormat::Png,
             simple_scale: 2.0,
             options: Options::default(),
             format: OutputFormat::Png,
@@ -66,7 +76,12 @@ impl Preferences {
     }
 
     fn preview_options(&self) -> Options {
-        if self.simple {
+        if self.ai_mode {
+            Options {
+                size: Size::Scale(1.0),
+                ..crate::ai::options()
+            }
+        } else if self.simple {
             simple::options(self.simple_scale, Filter::Lanczos3)
         } else {
             self.effective_options()
@@ -113,6 +128,8 @@ struct Preview {
     target: (u32, u32),
 }
 enum Event {
+    AiGenerated(Result<Box<crate::ai::Generated>, String>),
+    AiSaved(Result<PathBuf, String>),
     Discovered(Result<Vec<PathBuf>, String>),
     Preview(Result<Preview, String>),
     Started(usize, Filter),
@@ -122,6 +139,7 @@ enum Event {
 }
 
 pub struct Desktop {
+    ai: ai_panel::State,
     logo: egui::TextureHandle,
     prefs: Preferences,
     queue: Vec<QueueItem>,
@@ -170,6 +188,7 @@ impl Desktop {
             .and_then(|s| eframe::get_value(s, SETTINGS_KEY))
             .unwrap_or_default();
         Self {
+            ai: ai_panel::State::default(),
             logo: branding::logo(&cc.egui_ctx),
             prefs,
             queue: vec![],
@@ -207,7 +226,7 @@ impl Desktop {
         if paths.is_empty() || self.busy() {
             return;
         }
-        let recursive = !self.prefs.simple && self.prefs.recursive;
+        let recursive = !self.prefs.simple && !self.prefs.ai_mode && self.prefs.recursive;
         let exclude = self.prefs.export_folder().ok();
         let (tx, rx) = mpsc::sync_channel(2);
         self.receiver = Some(rx);
@@ -227,8 +246,16 @@ impl Desktop {
             return;
         }
         let path = self.queue[self.selected].path.clone();
+        if let Some(result) = self.ai.result.clone() {
+            if result.source != path {
+                self.ai.result = None;
+            } else if self.prefs.ai_mode {
+                self.show_ai_result(result, ctx);
+                return;
+            }
+        }
         let options = self.prefs.preview_options();
-        let simple_mode = self.prefs.simple;
+        let simple_mode = self.prefs.simple || self.prefs.ai_mode;
         let (tx, rx) = mpsc::sync_channel(2);
         self.receiver = Some(rx);
         self.cancel = Arc::new(AtomicBool::new(false));
@@ -277,7 +304,7 @@ impl Desktop {
     }
 
     fn export(&mut self, ctx: &egui::Context) {
-        if self.busy() || self.queue.is_empty() {
+        if self.busy() || self.queue.is_empty() || self.prefs.ai_mode {
             return;
         }
         let folder = match self.prefs.export_folder() {
@@ -390,6 +417,28 @@ impl Desktop {
         }
         for event in events {
             match event {
+                Event::AiGenerated(result) => self.ai_generated(result, ctx),
+                Event::AiSaved(result) => {
+                    self.receiver = None;
+                    match result {
+                        Ok(path) => {
+                            self.last_export_folder = path.parent().map(PathBuf::from);
+                            self.message = format!(
+                                "AI result saved to {}. No additional API request was made.",
+                                path.display()
+                            );
+                            if let Some(item) = self.queue.get_mut(self.selected) {
+                                item.status = "Saved AI enhancement".into();
+                                item.output = Some(path);
+                            }
+                        }
+                        Err(error) => {
+                            self.error = Some(error);
+                            self.message =
+                                "Save stopped. The generated result is still available.".into();
+                        }
+                    }
+                }
                 Event::Discovered(result) => {
                     self.receiver = None;
                     match result {
@@ -433,7 +482,9 @@ impl Desktop {
                                     egui::TextureOptions::LINEAR,
                                 )
                             });
-                            self.message = if self.prefs.simple {
+                            self.message = if self.prefs.ai_mode {
+                                "Image ready. Generate enhances only the selected image using OpenAI."
+                            } else if self.prefs.simple {
                                 "Image ready. Choose a ratio and export all algorithms."
                             } else {
                                 "Preview ready. Drag the divider to compare. Export saves the full-resolution image."
@@ -515,7 +566,9 @@ impl Desktop {
                     self.receiver = None;
                     self.exporting = false;
                     self.error = Some(error);
-                    self.message = "Export could not start. No outputs were written.".into();
+                    self.message =
+                        "Background operation stopped. Any completed outputs remain available."
+                            .into();
                     for item in &mut self.queue {
                         item.status = "Ready".into();
                     }
@@ -769,7 +822,7 @@ impl Desktop {
         ui.horizontal(|ui| {
             ui.label(RichText::new("THE BIG PICTURE").small().color(MUTED));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if !self.prefs.simple {
+                if !self.prefs.simple || self.prefs.ai_mode {
                     ui.checkbox(&mut self.comparison, "Comparison wipe");
                 }
                 ui.add(
@@ -863,7 +916,15 @@ impl Desktop {
             ui.horizontal(|ui| {
                 ui.label(RichText::new("ORIGINAL").small().color(MUTED));
                 if self.after.is_some() {
-                    ui.label(RichText::new("/ UPSCALED").small().color(ACCENT));
+                    ui.label(
+                        RichText::new(if self.prefs.ai_mode {
+                            "/ AI ENHANCED"
+                        } else {
+                            "/ UPSCALED"
+                        })
+                        .small()
+                        .color(ACCENT),
+                    );
                 }
             });
         } else {
@@ -885,9 +946,13 @@ impl Desktop {
                 );
                 ui.add_space(12.0);
                 ui.label(
-                    RichText::new("Offline by design. No uploads. No accounts.")
-                        .small()
-                        .color(ACCENT),
+                    RichText::new(if self.prefs.ai_mode {
+                        "AI enhancement uploads your selected image to OpenAI."
+                    } else {
+                        "Local processing. No uploads in Simple or Advanced."
+                    })
+                    .small()
+                    .color(ACCENT),
                 );
             });
         }
@@ -896,6 +961,7 @@ impl Desktop {
 
 impl eframe::App for Desktop {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_credentials(ctx);
         self.poll(ctx);
         if let Some(inputs) = self.initial_inputs.take()
             && !inputs.is_empty()
@@ -927,13 +993,26 @@ impl eframe::App for Desktop {
                     if ui.button("About & licenses").clicked() {
                         self.show_about = true;
                     }
-                    let old = self.prefs.simple;
+                    let old = (self.prefs.simple, self.prefs.ai_mode);
+                    let mut mode = if self.prefs.ai_mode {
+                        2
+                    } else if self.prefs.simple {
+                        0
+                    } else {
+                        1
+                    };
                     ui.add_enabled_ui(!self.busy(), |ui| {
-                        ui.selectable_value(&mut self.prefs.simple, false, "Advanced");
-                        ui.selectable_value(&mut self.prefs.simple, true, "Simple");
+                        ui.selectable_value(&mut mode, 2, "AI Enhancement");
+                        ui.selectable_value(&mut mode, 1, "Advanced");
+                        ui.selectable_value(&mut mode, 0, "Simple");
                     });
-                    if old != self.prefs.simple {
+                    self.prefs.simple = mode == 0;
+                    self.prefs.ai_mode = mode == 2;
+                    if old != (self.prefs.simple, self.prefs.ai_mode) {
                         self.clear_preview();
+                        if !self.queue.is_empty() {
+                            self.preview(ctx);
+                        }
                     }
                 });
             });
@@ -996,12 +1075,13 @@ impl eframe::App for Desktop {
                         self.add(paths, ctx);
                     }
                     if !self.prefs.simple
+                        && !self.prefs.ai_mode
                         && ui.button("+ Add folder…").clicked()
                         && let Some(path) = rfd::FileDialog::new().pick_folder()
                     {
                         self.add(vec![path], ctx);
                     }
-                    if !self.prefs.simple {
+                    if !self.prefs.simple && !self.prefs.ai_mode {
                         ui.checkbox(&mut self.prefs.recursive, "Include subfolders");
                     }
                 });
@@ -1045,11 +1125,13 @@ impl eframe::App for Desktop {
                 }
                 ui.add_enabled_ui(!busy && !self.queue.is_empty(), |ui| {
                     if ui.button("Remove selected").clicked() {
+                        self.ai.result = None;
                         self.queue.remove(self.selected);
                         self.selected = self.selected.min(self.queue.len().saturating_sub(1));
                         self.clear_preview();
                     }
                     if ui.button("Clear queue").clicked() {
+                        self.ai.result = None;
                         self.queue.clear();
                         self.selected = 0;
                         self.clear_preview();
@@ -1064,6 +1146,10 @@ impl eframe::App for Desktop {
                 let busy = self.busy();
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.add_enabled_ui(!busy, |ui| {
+                        if self.prefs.ai_mode {
+                            self.ai_settings(ui, ctx);
+                            return;
+                        }
                         if self.prefs.simple {
                             self.simple_settings(ui);
                         } else {
@@ -1128,10 +1214,10 @@ impl eframe::App for Desktop {
                 .show(ctx, |ui| {
                     branding::show_logo(ui, &self.logo, 96.0);
                     ui.label(concat!("Version ", env!("CARGO_PKG_VERSION")));
-                    ui.label("Conventional upscaling. More pixels, without invented detail.");
+                    ui.label("Local upscaling and optional AI enhancement.");
                     ui.separator();
                     ui.label("MIT licensed. The app adds no royalties, attribution requirement, or commercial-use restriction to processed images. Your rights to the input still apply.");
-                    ui.label("All processing is local. No accounts, uploads, AI models, or paid APIs.");
+                    ui.label("Simple and Advanced process locally. AI Enhancement sends the selected image and instructions directly to OpenAI using your API key, with API charges and provider terms. AI can alter or invent details.");
                     ui.horizontal(|ui| {
                         ui.hyperlink_to("Image codecs", "https://github.com/image-rs/image");
                         ui.hyperlink_to("Resize engine", "https://github.com/Cykooz/fast_image_resize");
@@ -1197,6 +1283,263 @@ pub fn launch(inputs: Vec<PathBuf>) -> eframe::Result {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn assert_jpeg_quality_100(bytes: &[u8]) {
+        let tables = bytes
+            .windows(2)
+            .enumerate()
+            .filter(|(_, w)| *w == [0xff, 0xdb])
+            .collect::<Vec<_>>();
+        assert!(!tables.is_empty());
+        for (offset, _) in tables {
+            assert!(
+                bytes[offset + 5..offset + 69].iter().all(|v| *v == 1),
+                "JPEG quantization table does not match quality 100"
+            );
+        }
+    }
+
+    #[test]
+    fn remembered_key_state_never_serializes_secrets_and_handles_failures() {
+        let (mut app, _) = app();
+        app.ai.key.push_str("private-key");
+        app.ai.consent = true;
+        app.ai.key_edited = true;
+        app.credentials_finished(Err(credentials::Error::Unavailable), "save");
+        assert!(!app.prefs.remember_ai_key);
+        assert!(app.ai.key.as_str() == "private-key");
+        app.credentials_finished(Ok(credentials::Outcome::Saved), "save");
+        assert!(app.prefs.remember_ai_key);
+        assert!(!app.ai.key_edited);
+        let stored = serde_json::to_string(&app.prefs).unwrap();
+        assert!(!stored.contains("private-key"));
+        let restored: Preferences = serde_json::from_str(&stored).unwrap();
+        assert!(restored.remember_ai_key);
+        app.credentials_finished(Err(credentials::Error::Unavailable), "forget");
+        assert!(app.prefs.remember_ai_key); // Never claim an unsuccessful delete succeeded.
+        assert!(app.ai.vault_message.contains("may still be stored"));
+        app.credentials_finished(
+            Ok(credentials::Outcome::Loaded(Some(zeroize::Zeroizing::new(
+                "reloaded-key".into(),
+            )))),
+            "load",
+        );
+        assert!(app.ai.key.as_str() == "reloaded-key");
+        assert!(!app.ai.consent); // Reloading a key must not consent to an upload.
+        app.credentials_finished(Ok(credentials::Outcome::Forgotten), "forget");
+        assert!(!app.prefs.remember_ai_key);
+        assert!(app.ai.key.is_empty());
+        app.credentials_finished(Ok(credentials::Outcome::Loaded(None)), "load");
+        assert!(!app.prefs.remember_ai_key);
+        assert!(app.ai.vault_message.contains("No saved key"));
+    }
+
+    #[test]
+    fn credential_worker_result_is_applied_without_using_image_worker_or_logging_secret() {
+        let (mut app, ctx) = app();
+        let (tx, rx) = mpsc::sync_channel(1);
+        app.ai.vault_receiver = Some(rx);
+        app.ai.vault_operation = Some("load");
+        tx.send(Ok(credentials::Outcome::Loaded(Some(
+            zeroize::Zeroizing::new("hidden-key".into()),
+        ))))
+        .unwrap_or_else(|_| panic!("mock channel disconnected"));
+        app.poll_credentials(&ctx);
+        assert!(app.ai.vault_receiver.is_none());
+        assert!(app.ai.key.as_str() == "hidden-key");
+        assert!(!app.ai.vault_message.contains("hidden-key"));
+        assert!(!app.busy());
+        let (tx, rx) = mpsc::sync_channel(1);
+        app.ai.vault_receiver = Some(rx);
+        app.ai.vault_operation = Some("forget");
+        drop(tx);
+        app.poll_credentials(&ctx);
+        assert!(app.prefs.remember_ai_key);
+        assert!(app.ai.vault_message.contains("Could not remove"));
+    }
+
+    #[test]
+    fn ai_export_selected_format_corrects_extension_and_checks_the_final_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("original.png");
+        image::RgbaImage::new(8, 6).save(&input).unwrap();
+        let (mut app, ctx) = app();
+        app.prefs.ai_mode = true;
+        app.queue.push(QueueItem {
+            path: input.clone(),
+            ..Default::default()
+        });
+        app.ai_generated(Ok(ai_fixture(&app, input)), &ctx);
+        app.prefs.ai_format = OutputFormat::Jpeg;
+        app.save_ai(dir.path().join("chosen.png"), &ctx);
+        settle(&mut app, &ctx);
+        let jpeg = dir.path().join("chosen.jpg");
+        assert!(!dir.path().join("chosen.png").exists());
+        let bytes = std::fs::read(&jpeg).unwrap();
+        assert_eq!(
+            image::guess_format(&bytes).unwrap(),
+            image::ImageFormat::Jpeg
+        );
+        assert_jpeg_quality_100(&bytes);
+        assert_eq!(app.queue[0].output.as_ref(), Some(&jpeg));
+        // A collision at the corrected path is checked before staging any file.
+        app.save_ai(dir.path().join("chosen.png"), &ctx);
+        assert!(!app.busy());
+        assert!(app.error.is_some());
+        assert_eq!(std::fs::read(jpeg).unwrap(), bytes);
+        app.prefs.ai_format = OutputFormat::Png;
+        app.save_ai(dir.path().join("lossless.jpg"), &ctx);
+        settle(&mut app, &ctx);
+        assert!(!dir.path().join("lossless.jpg").exists());
+        assert_eq!(
+            image::guess_format(&std::fs::read(dir.path().join("lossless.png")).unwrap()).unwrap(),
+            image::ImageFormat::Png
+        );
+    }
+    #[test]
+    fn ai_credentials_and_prompt_are_never_saved_and_legacy_modes_still_load() {
+        let (mut app, _) = app();
+        app.ai.key.push_str("private-api-key");
+        app.ai.consent = true;
+        app.prefs.ai_mode = true;
+        app.prefs.ai.prompt = "private-prompt".into();
+        app.prefs.ai.scale = 1.0;
+        let stored = serde_json::to_string(&app.prefs).unwrap();
+        assert!(!stored.contains("private-api-key"));
+        assert!(!stored.contains("private-prompt"));
+        assert!(!stored.contains("consent"));
+        let restored: Preferences = serde_json::from_str(&stored).unwrap();
+        assert!(restored.ai_mode);
+        assert_eq!(restored.ai.scale, 1.0);
+        assert!(restored.ai.prompt.is_empty());
+        for simple in [true, false] {
+            let old: Preferences =
+                serde_json::from_value(serde_json::json!({"simple":simple})).unwrap();
+            assert_eq!(old.simple, simple);
+            assert!(!old.ai_mode);
+        }
+    }
+
+    fn ai_fixture(app: &Desktop, input: PathBuf) -> Box<crate::ai::Generated> {
+        let settings = app.prefs.ai.clone();
+        let plan = crate::ai::plan((8, 6), &settings).unwrap();
+        Box::new(crate::ai::Generated {
+            source: input,
+            source_dimensions: (8, 6),
+            before: image::DynamicImage::new_rgba8(8, 6),
+            pixels: image::RgbaImage::from_pixel(
+                plan.target.0,
+                plan.target.1,
+                image::Rgba([50, 100, 150, 128]),
+            ),
+            plan,
+            settings,
+        })
+    }
+
+    #[test]
+    fn ai_selection_only_loads_source_and_never_generates_without_consent() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("source.png");
+        image::RgbaImage::new(8, 6).save(&input).unwrap();
+        let (mut app, ctx) = app();
+        app.prefs.ai_mode = true;
+        app.ai.key.push_str("not-a-real-key");
+        app.add(vec![input], &ctx);
+        settle(&mut app, &ctx);
+        assert!(app.before.is_some());
+        assert!(app.after.is_none());
+        assert!(app.ai.result.is_none());
+        app.generate_ai(&ctx);
+        assert!(!app.busy());
+        // Even a direct call to local Export cannot accidentally process AI mode.
+        app.export(&ctx);
+        assert!(!app.busy());
+    }
+
+    #[test]
+    fn ai_saves_cached_full_pixels_without_a_key_and_protects_all_sources() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("source.png");
+        let other = dir.path().join("other.png");
+        image::RgbaImage::new(8, 6).save(&input).unwrap();
+        image::RgbaImage::new(8, 6).save(&other).unwrap();
+        let original = std::fs::read(&input).unwrap();
+        let (mut app, ctx) = app();
+        app.prefs.ai_mode = true;
+        app.queue = vec![
+            QueueItem {
+                path: input.clone(),
+                ..Default::default()
+            },
+            QueueItem {
+                path: other.clone(),
+                ..Default::default()
+            },
+        ];
+        app.ai_generated(Ok(ai_fixture(&app, input.clone())), &ctx);
+        assert!(app.after.is_some());
+        assert_eq!(app.dimensions.unwrap().1, (16, 12));
+        // Control edits must not change or regenerate a paid result on Save.
+        app.prefs.ai.scale = 4.0;
+        for ext in ["png", "jpeg", "webp"] {
+            let output = dir.path().join(format!("saved.{ext}"));
+            app.prefs.ai_format = OutputFormat::from_path(&output).unwrap();
+            app.save_ai(output.clone(), &ctx);
+            settle(&mut app, &ctx);
+            assert!(app.error.is_none(), "{:?}", app.error);
+            assert_eq!(image::image_dimensions(&output).unwrap(), (16, 12));
+            let bytes = std::fs::read(&output).unwrap();
+            assert_eq!(
+                image::guess_format(&bytes).unwrap(),
+                app.prefs.ai_format.image_format()
+            );
+            if ext == "jpeg" {
+                assert_jpeg_quality_100(&bytes);
+            }
+            if ext == "png" {
+                assert_eq!(
+                    image::open(&output).unwrap().to_rgba8().get_pixel(0, 0)[3],
+                    128
+                );
+            }
+        }
+        assert!(app.ai.key.is_empty());
+        assert!(app.ai.result.is_some());
+        app.prefs.ai_format = OutputFormat::Png;
+        app.save_ai(other.clone(), &ctx);
+        assert!(!app.busy());
+        assert!(app.error.is_some());
+        let output = dir.path().join("saved.png");
+        let saved = std::fs::read(&output).unwrap();
+        app.save_ai(output.clone(), &ctx);
+        assert!(app.error.is_some());
+        assert_eq!(std::fs::read(output).unwrap(), saved);
+        assert_eq!(std::fs::read(input).unwrap(), original);
+        assert_eq!(app.queue.len(), 2);
+    }
+
+    #[test]
+    fn ai_failure_cancellation_and_mode_switch_preserve_the_previous_result() {
+        let (mut app, ctx) = app();
+        let input = PathBuf::from("source.png");
+        app.prefs.ai_mode = true;
+        app.queue.push(QueueItem {
+            path: input.clone(),
+            ..Default::default()
+        });
+        app.ai_generated(Ok(ai_fixture(&app, input.clone())), &ctx);
+        let previous = app.ai.result.clone().unwrap();
+        app.ai_generated(Err("mock failure".into()), &ctx);
+        assert!(Arc::ptr_eq(&previous, app.ai.result.as_ref().unwrap()));
+        app.cancel.store(true, Ordering::Relaxed);
+        app.ai_generated(Ok(ai_fixture(&app, input)), &ctx);
+        assert!(Arc::ptr_eq(&previous, app.ai.result.as_ref().unwrap()));
+        app.clear_preview();
+        app.preview(&ctx);
+        assert!(!app.busy()); // Cached result is restored without loading or uploading.
+        assert!(app.after.is_some());
+        assert!(Arc::ptr_eq(&previous, app.ai.result.as_ref().unwrap()));
+    }
     #[test]
     fn preferences_round_trip_and_modes() {
         let prefs = Preferences {
@@ -1233,6 +1576,7 @@ mod tests {
         let mut app = Desktop::new(&creation, vec![]);
         app.prefs.simple = false;
         app.initial_inputs = None;
+        app.ai.vault_checked = true; // Tests never access the user's real credential store.
         (app, ctx)
     }
 
@@ -1249,13 +1593,18 @@ mod tests {
     fn empty_desktop_and_all_size_controls_render_headlessly() {
         use eframe::App;
         let (mut app, ctx) = app();
-        for mode in 0..6 {
+        for mode in 0..7 {
+            app.prefs.ai_mode = mode == 6;
             app.prefs.simple = mode == 5;
             app.prefs.size_mode = mode;
             let input = egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
-                    Vec2::new(1280.0, 820.0),
+                    if mode == 6 {
+                        Vec2::new(980.0, 660.0)
+                    } else {
+                        Vec2::new(1280.0, 820.0)
+                    },
                 )),
                 ..Default::default()
             };

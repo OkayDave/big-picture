@@ -7,9 +7,10 @@ extent you hold the necessary rights to the input and its contents. Upscaling
 does not remove copyright, trademark, privacy, or other restrictions in an input.
 This policy is not a guarantee that a particular input is cleared for use.
 
-The application uses conventional mathematical filters. No AI models, model
-weights, hosted inference, paid API, account, or model-specific output terms are
-involved. All image processing runs locally.
+Simple, Advanced and the CLI use local mathematical filters. Optional desktop
+AI Enhancement uses hosted OpenAI image editing, the user's API key, and paid API
+usage. No AI weights are bundled. Provider terms and policies also apply to that
+optional service; review them in your OpenAI account before use.
 
 ## Dependencies
 
@@ -33,6 +34,10 @@ not by themselves license somebody else's input image to you.
 | [dirs-next](https://github.com/xdg-rs/dirs) | System Pictures folder | MIT OR Apache-2.0 |
 | [open](https://github.com/Byron/open-rs) | Open the export folder | MIT |
 | [winresource](https://github.com/BenjaminRi/winresource) | Build-time Windows icon and version resources | MIT |
+| [reqwest](https://github.com/seanmonstar/reqwest) | Optional desktop HTTPS image-edit requests | MIT OR Apache-2.0 |
+| [base64](https://github.com/marshallpierce/rust-base64) | Decode AI response images | MIT OR Apache-2.0 |
+| [zeroize](https://github.com/RustCrypto/utils/tree/master/zeroize) | Clear application-owned API-key strings on drop | Apache-2.0 OR MIT |
+| [keyring](https://github.com/hwchen/keyring-rs) | Optional OS credential-store access | MIT OR Apache-2.0 |
 
 The exact transitive dependency set is pinned in Cargo.lock. The dependency
 graph also includes Boost-licensed Windows clipboard support (BSL-1.0), along

@@ -9,6 +9,10 @@ information in both executable files. All artwork is bundled for offline use.
 
 ## Simple mode
 
+To try the bundled sample, use **Choose image…** and open `docs/samples/merlin.jpg`
+from the project or portable package. This is Dave's photograph of Merlin,
+prepared at 1200×900 with the full composition and no source metadata.
+
 The app opens in **Simple** mode by default. Use **Choose image…** (or drop an
 image onto the window), choose a scale ratio, optionally choose a destination,
 then click **Export 5 JPEGs**. Multiple selected images are also supported; the
@@ -81,6 +85,80 @@ source images are always protected, even when enabled.
 Settings, selected mode and each mode's scale are saved through eframe in the OS
 application-data directory. The image queue and image pixels are not persisted.
 Processing and resource settings persist; the output folder resets on launch.
+
+## AI Enhancement mode
+
+Choose **AI Enhancement** in the header. This mode enhances **one selected image**
+at a time, even when several images are queued. Loading an image, changing
+settings, switching modes and saving never initiate an OpenAI request.
+
+1. Select an image and enter your own OpenAI API key. It is masked, never saved
+   in preferences or logged. By default it stays in memory for this session.
+   Optionally check **Remember API key on this device** to save it in Windows
+   Credential Manager, macOS Keychain, or Linux Secret Service. Successful saves
+   enable automatic loading on launch; cloud-processing acknowledgement still
+   starts off. **Update saved key** explicitly saves edits to a remembered key.
+   **Forget saved key** (or unchecking Remember) removes the saved entry and clears
+   the session key. **Clear key** clears only memory; an existing saved copy remains.
+   **Load saved key** can recover a saved entry after preferences have been reset.
+   Storage access runs off the UI thread. If the store is locked or unavailable,
+   unlock it and retry, or paste a session key; the app never falls back to a file.
+   Storage failures are reported without exposing backend error contents.
+2. Choose a scale (0.25×–8×, including **1×**), cleanup and detail strength,
+   original/natural/vibrant colours, optional exposure correction and overall
+   Subtle/Balanced/Creative enhancement. Subtle is the conservative default.
+3. Optionally enter instructions (up to 4000 characters). Prompt text is also
+   session-only. The controls translate into instructions rather than exact
+   numerical image filters; preservation of faces, lettering and identity is
+   requested but cannot be guaranteed.
+4. Choose **Standard** (API `medium`) or **High** quality. High generally costs
+   more. The pricing/calculator link explains current charges; the app does not
+   claim an exact price before generation. Input image and prompt tokens also
+   contribute to cost. Your project must have image-model access and API billing.
+5. Review the next output and AI-render dimensions. The normalized source PNG
+   (with orientation applied and source metadata stripped) and instructions are
+   sent directly to OpenAI, not through a Big Picture server. Check the cloud/
+   billing acknowledgement, then **Generate enhancement · paid**.
+6. Compare the returned result using the wipe or result-only view. **Save current
+   result** encodes those retained full-resolution pixels locally, with no further
+   API calls. Choose the **Export format** before saving: PNG is the lossless
+   default; JPEG uses quality **100** with a white alpha matte; WebP is lossless.
+   The save dialog offers that format, and the filename extension is corrected to
+   match before collision checks and encoding. `.jpeg` is also accepted for JPEG.
+   Choose a new filename: existing files and queued source
+   images are protected even if Advanced allows replacements.
+
+The backend uses `gpt-image-2.5-sunburst` and `/v1/images/edits`. It requests a
+single image per Generate, disables retries and redirects, and waits up to three
+minutes (15-second connection timeout). Cancel takes effect between stages;
+an in-flight HTTP call can finish before cancellation is observed. Cancellation,
+timeouts or closing the app cannot guarantee that OpenAI stops processing or
+waives charges. Check usage before retrying an uncertain request.
+
+An existing successful result stays available if a later generation fails or is
+cancelled. Changing controls does not silently regenerate it: the panel labels
+the current result and says that new settings apply to the next Generate. The
+result also survives a mode switch while the same image is selected. Selecting
+another image, removing an image, clearing the queue or exiting discards it.
+Save before changing the selected image. No image cache is written to disk.
+
+AI output dimensions must be multiples of 16. Big Picture chooses a similar
+aspect ratio within the documented non-experimental pixel budget, then uses
+local Lanczos resizing to reach the exact requested dimensions. This can slightly
+adjust the AI result's aspect ratio; large ratios can include conventional
+enlargement, not AI detail generated at the final resolution. Sources outside
+1:3–3:1 are rejected before upload; crop separately or use a local mode. Preflight
+also enforces a 64-million-pixel cap and a conservative 2 GiB working-memory
+estimate independent of Advanced settings. Normalized uploads must be under
+50 MB; response bodies are limited to 64 MiB and decoded images are bounded.
+
+OpenAI may alter or invent detail and reject some images or prompts. This is
+optional cloud editing, not a guarantee of faithful reconstruction. Simple,
+Advanced and the CLI continue to work offline without an API key.
+
+API references checked for this implementation:
+[image editing](https://developers.openai.com/api/reference/resources/images/methods/edit)
+and [image generation](https://developers.openai.com/api/docs/guides/image-generation).
 
 ## Preview limits
 

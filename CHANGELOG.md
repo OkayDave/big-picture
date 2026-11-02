@@ -2,6 +2,18 @@
 
 ## 0.1.0 — Unreleased
 
+- Replace the landscape sample with Dave's photograph of Merlin, prepared as a
+  1200×900 JPEG without source metadata. The sample exporter now uses that image.
+- Add optional single-image AI Enhancement desktop mode powered by OpenAI,
+  with cleanup, detail, colour, exposure, prompt, scale and quality controls.
+  Keys are session-only by default, with optional OS credential-store persistence;
+  prompts remain session-only and cloud/billing consent is explicit.
+  Generate retains a full-resolution result for comparison and repeated local
+  saves without further API calls, using shared atomic/source-protected encoding.
+- Add Remember/Update/Load/Forget controls for the AI API key. Saved keys load on
+  launch without enabling cloud processing. No keys go into app preferences.
+- Make AI export format explicit (PNG/JPEG/WebP), match extensions to that format,
+  and increase AI JPEG quality to 100. PNG and WebP exports remain lossless.
 - Add the Expand logo to the desktop header, About window and README, with
   native window and Windows executable icons and an updated app screenshot.
 - Default Simple desktop mode with 2× scaling, a destination that resets to the

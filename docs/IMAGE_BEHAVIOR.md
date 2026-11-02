@@ -17,6 +17,13 @@ amounts exaggerate noise and halos.
 
 ## Alpha and color
 
+The filter guidance describes the local engine. Optional desktop AI Enhancement
+uses generative editing and may change or invent content, colours and alpha.
+Transparent sources request transparent PNG output, without a guarantee that
+every original alpha value or feature survives. Its final resizing and local
+encoding use the same engine. See [the desktop guide](GUI.md#ai-enhancement-mode)
+for cloud uploads, costs, size constraints and preservation limits.
+
 Filtering uses premultiplied alpha internally, then restores straight alpha.
 This prevents invisible color from contaminating partially transparent edges.
 Sharpening preserves alpha and uses an alpha-aware color blur. PNG, WebP and
